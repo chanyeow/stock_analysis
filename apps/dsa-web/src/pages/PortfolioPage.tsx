@@ -235,6 +235,8 @@ const PortfolioPage: React.FC = () => {
   const [corporateEvents, setCorporateEvents] = useState<PortfolioCorporateActionListItem[]>([]);
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [pendingDeleteAccount, setPendingDeleteAccount] = useState<PortfolioAccountItem | null>(null);
+  const [deleteAccountLoading, setDeleteAccountLoading] = useState(false);
 
   const [tradeForm, setTradeForm] = useState({
     symbol: '',
@@ -681,6 +683,20 @@ const PortfolioPage: React.FC = () => {
     }
   };
 
+  const handleConfirmDeleteAccount = async () => {
+    if (!pendingDeleteAccount || deleteAccountLoading) return;
+    try {
+      setDeleteAccountLoading(true);
+      await portfolioApi.deleteAccount(pendingDeleteAccount.id);
+      setPendingDeleteAccount(null);
+      await loadAccounts();
+    } catch (err) {
+      setError(getParsedApiError(err));
+    } finally {
+      setDeleteAccountLoading(false);
+    }
+  };
+
   const handleRefresh = async () => {
     await Promise.all([loadAccounts(), loadSnapshotAndRisk(), loadEvents(), loadBrokers()]);
   };
@@ -832,6 +848,17 @@ const PortfolioPage: React.FC = () => {
                   }}
                 >
                   {showCreateAccount ? '收起新建' : '新建账户'}
+                </button>
+                <button
+                  type="button"
+                  className="btn-secondary text-sm text-red-400 flex-1"
+                  disabled={selectedAccount === 'all' || accounts.length === 0}
+                  onClick={() => {
+                    const target = accounts.find((a) => a.id === selectedAccount);
+                    if (target) setPendingDeleteAccount(target);
+                  }}
+                >
+                  删除账户
                 </button>
                 <button
                   type="button"
@@ -1397,6 +1424,20 @@ const PortfolioPage: React.FC = () => {
         onCancel={() => {
           if (!deleteLoading) {
             setPendingDelete(null);
+          }
+        }}
+      />
+      <ConfirmDialog
+        isOpen={Boolean(pendingDeleteAccount)}
+        title="删除账户"
+        message={`确认删除账户「${pendingDeleteAccount?.name}」吗？该账户下的交易记录将被保留，但账户将被停用。`}
+        confirmText={deleteAccountLoading ? '删除中...' : '确认删除'}
+        cancelText="取消"
+        isDanger
+        onConfirm={() => void handleConfirmDeleteAccount()}
+        onCancel={() => {
+          if (!deleteAccountLoading) {
+            setPendingDeleteAccount(null);
           }
         }}
       />
