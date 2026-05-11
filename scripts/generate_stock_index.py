@@ -1,18 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Stock Index Generation Script
-
-Generate stock index file for frontend autocomplete functionality
-Output to apps/dsa-web/public/stocks.index.json
-
-Two-phase strategy:
-1. MVP: Use existing STOCK_NAME_MAP
-2. Future: Combine with AkShare for complete list
-
-Usage:
-    python3 scripts/generate_stock_index.py
-"""
+# 从内置映射表生成股票自动补全索引（MVP 方案）
+# 功能：读取 src/data/stock_mapping.py 中的 STOCK_NAME_MAP，生成前端自动补全索引文件
+#       包含拼音全拼/首字母缩写、常见股票别名、市场判断等字段
+# 输出：apps/dsa-web/public/stocks.index.json（压缩数组格式）
+# 用法：python3 scripts/generate_stock_index.py              # 生成索引文件
+#       python3 scripts/generate_stock_index.py --test       # 测试模式，只验证不写入
+#       python3 scripts/generate_stock_index.py --test -v    # 测试模式 + 显示详细数据预览
 
 import argparse
 import json

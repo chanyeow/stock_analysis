@@ -1,21 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Static frontend sanity check for the desktop / server packaging pipeline.
-
-Validates that ``index.html`` only references ``/assets/*.js`` and
-``/assets/*.css`` files that actually exist on disk. A mismatch here is the
-most common cause of the "Preparing backend..." / blank-page bug reported in
-GitHub issues #1064, #1065, #1050: vite re-builds with a new content hash,
-but the packaging step picks up a stale ``static/`` directory or copies the
-files out of sync, so the browser receives a 404 (often as JSON) for the
-main bundle and refuses to execute it.
-
-Usage:
-    python scripts/check_static_assets.py [<static_dir>]
-
-Exits 0 when consistent, non-zero with a human-readable message otherwise.
-"""
+# 前端静态资源完整性校验脚本
+# 功能：校验 index.html 中引用的 /assets/*.js 和 /assets/*.css 文件是否实际存在于磁盘上
+# 用途：桌面端/服务端打包流水线中的静态资源一致性检查，防止因 Vite 重新构建后哈希值变化
+#       而打包步骤仍使用旧 static/ 目录导致的白屏问题（参见 GitHub #1064, #1065, #1050）
+# 用法：python scripts/check_static_assets.py [<static_dir>]
+# 退出码：0=一致，1=资源缺失，2=index.html 不存在
 
 from __future__ import annotations
 

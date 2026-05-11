@@ -1,19 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Generate Stock Index from CSV File
-
-Input:
-  - Tushare format: data/stock_list_{a,hk,us}.csv
-  - AkShare format: logs/stock_basic_*.csv
-
-Output: apps/dsa-web/public/stocks.index.json
-
-Usage:
-    python3 scripts/generate_index_from_csv.py              # 默认使用 Tushare
-    python3 scripts/generate_index_from_csv.py --source akshare
-    python3 scripts/generate_index_from_csv.py --test       # 测试模式
-"""
+# 从 CSV 文件生成股票自动补全索引
+# 功能：读取 Tushare 或 AkShare 格式的股票列表 CSV，生成前端自动补全所需的 stocks.index.json
+# 输入：Tushare 格式 data/stock_list_{a,hk,us}.csv 或 AkShare 格式 logs/stock_basic_*.csv
+# 输出：apps/dsa-web/public/stocks.index.json（压缩数组格式，含拼音、别名、市场等字段）
+# 用法：python3 scripts/generate_index_from_csv.py              # 默认使用 Tushare
+#       python3 scripts/generate_index_from_csv.py --source akshare
+#       python3 scripts/generate_index_from_csv.py --test       # 测试模式，只验证不写入
 
 import argparse
 import csv

@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# macOS 后端构建脚本
+# 功能：构建 Web 前端静态资源、校验资源引用、使用 PyInstaller 打包后端可执行文件
+# 流程：安装前端依赖 -> 构建前端 -> 校验静态资源 -> 安装后端依赖 -> PyInstaller 打包 -> 再次校验打包产物中的静态资源
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

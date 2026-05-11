@@ -2537,3 +2537,79 @@ class DataFetcherManager:
             return top, bottom
         logger.warning(f"[板块排行] 所有数据源均失败，最终错误: {last_error}")
         return [], []
+
+    def get_industry_sw(self, stock_code: str) -> Optional[Dict[str, Any]]:
+        """获取申万行业分类（自动切换数据源）"""
+        for fetcher in self._fetchers:
+            if not hasattr(fetcher, 'get_industry_sw'):
+                continue
+            try:
+                data = fetcher.get_industry_sw(stock_code)
+                if data:
+                    logger.info(f"[{fetcher.name}] 获取申万行业成功: {stock_code}")
+                    return data
+            except Exception as e:
+                logger.warning(f"[{fetcher.name}] 获取申万行业失败: {e}")
+                continue
+        return None
+
+    def get_concepts(self, stock_code: str, source: str = "east") -> Optional[List[Dict[str, Any]]]:
+        """获取个股所属概念板块（自动切换数据源）"""
+        for fetcher in self._fetchers:
+            method_name = 'get_concept_east' if source == "east" else 'get_concept_ths'
+            if not hasattr(fetcher, method_name):
+                continue
+            try:
+                data = getattr(fetcher, method_name)(stock_code)
+                if data:
+                    logger.info(f"[{fetcher.name}] 获取概念成功: {stock_code} ({source})")
+                    return data
+            except Exception as e:
+                logger.warning(f"[{fetcher.name}] 获取概念失败: {e}")
+                continue
+        return None
+
+    def get_plates(self, stock_code: str) -> Optional[List[Dict[str, Any]]]:
+        """获取个股所属板块（自动切换数据源）"""
+        for fetcher in self._fetchers:
+            if not hasattr(fetcher, 'get_plate_east'):
+                continue
+            try:
+                data = fetcher.get_plate_east(stock_code)
+                if data:
+                    logger.info(f"[{fetcher.name}] 获取板块成功: {stock_code}")
+                    return data
+            except Exception as e:
+                logger.warning(f"[{fetcher.name}] 获取板块失败: {e}")
+                continue
+        return None
+
+    def get_core_index(self, stock_code: str) -> Optional[Dict[str, Any]]:
+        """获取核心财务指标（自动切换数据源）"""
+        for fetcher in self._fetchers:
+            if not hasattr(fetcher, 'get_core_index'):
+                continue
+            try:
+                data = fetcher.get_core_index(stock_code)
+                if data:
+                    logger.info(f"[{fetcher.name}] 获取核心财务指标成功: {stock_code}")
+                    return data
+            except Exception as e:
+                logger.warning(f"[{fetcher.name}] 获取核心财务指标失败: {e}")
+                continue
+        return None
+
+    def get_north_flow(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> Optional[pd.DataFrame]:
+        """获取北向资金净流入数据（自动切换数据源）"""
+        for fetcher in self._fetchers:
+            if not hasattr(fetcher, 'get_north_flow'):
+                continue
+            try:
+                data = fetcher.get_north_flow(start_date=start_date, end_date=end_date)
+                if data is not None and not data.empty:
+                    logger.info(f"[{fetcher.name}] 获取北向资金成功")
+                    return data
+            except Exception as e:
+                logger.warning(f"[{fetcher.name}] 获取北向资金失败: {e}")
+                continue
+        return None

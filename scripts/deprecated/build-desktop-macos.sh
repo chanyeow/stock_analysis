@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# macOS 桌面端构建脚本
+# 功能：使用 Electron Builder 打包 macOS DMG 安装包
+# 前置：需先运行 build-backend-macos.sh 生成后端产物到 dist/backend/stock_analysis/
+# 环境变量：DSA_MAC_ARCH 可指定目标架构（x64 或 arm64），默认使用当前架构
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

@@ -25,11 +25,11 @@ if [ -f "$PID_FILE" ]; then
 fi
 
 # 兜底：杀掉所有 python main.py --webui 进程
-pkill -f "python.*main\.py.*--webui" 2>/dev/null || true
+pkill -f "python.*main\.py.*--webui-only" 2>/dev/null || true
 sleep 1
 
 echo "启动服务 ..."
-nohup $PYTHON main.py --webui > ./logs/start.log 2>&1 &
+nohup $PYTHON main.py --webui-only > ./logs/start.log 2>&1 &
 NEW_PID=$!
 echo "$NEW_PID" > "$PID_FILE"
 echo "已启动 (PID: $NEW_PID)"

@@ -163,10 +163,10 @@ class StockService:
     def _get_placeholder_quote(self, stock_code: str) -> Dict[str, Any]:
         """
         获取占位行情数据（用于测试）
-        
+
         Args:
             stock_code: 股票代码
-            
+
         Returns:
             占位行情数据
         """
@@ -184,3 +184,61 @@ class StockService:
             "amount": None,
             "update_time": datetime.now().isoformat(),
         }
+
+    def get_industry_sw(self, stock_code: str) -> Optional[Dict[str, Any]]:
+        """获取申万行业分类"""
+        try:
+            from data_provider.base import DataFetcherManager
+            manager = DataFetcherManager()
+            return manager.get_industry_sw(stock_code)
+        except Exception as e:
+            logger.error(f"获取申万行业失败: {e}", exc_info=True)
+            return None
+
+    def get_concepts(self, stock_code: str, source: str = "east") -> Optional[List[Dict[str, Any]]]:
+        """获取个股所属概念板块"""
+        try:
+            from data_provider.base import DataFetcherManager
+            manager = DataFetcherManager()
+            return manager.get_concepts(stock_code, source=source)
+        except Exception as e:
+            logger.error(f"获取概念失败: {e}", exc_info=True)
+            return None
+
+    def get_plates(self, stock_code: str) -> Optional[List[Dict[str, Any]]]:
+        """获取个股所属板块（行业+地域+概念）"""
+        try:
+            from data_provider.base import DataFetcherManager
+            manager = DataFetcherManager()
+            return manager.get_plates(stock_code)
+        except Exception as e:
+            logger.error(f"获取板块失败: {e}", exc_info=True)
+            return None
+
+    def get_core_index(self, stock_code: str) -> Optional[Dict[str, Any]]:
+        """获取核心财务指标"""
+        try:
+            from data_provider.base import DataFetcherManager
+            manager = DataFetcherManager()
+            return manager.get_core_index(stock_code)
+        except Exception as e:
+            logger.error(f"获取核心财务指标失败: {e}", exc_info=True)
+            return None
+
+    def get_north_flow(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """获取北向资金净流入数据"""
+        try:
+            from data_provider.base import DataFetcherManager
+            manager = DataFetcherManager()
+            df = manager.get_north_flow(start_date=start_date, end_date=end_date)
+            if df is None or df.empty:
+                return None
+            # 转换为列表字典
+            records = df.to_dict(orient="records")
+            return {
+                "data": records,
+                "count": len(records),
+            }
+        except Exception as e:
+            logger.error(f"获取北向资金失败: {e}", exc_info=True)
+            return None

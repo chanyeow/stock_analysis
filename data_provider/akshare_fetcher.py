@@ -90,6 +90,18 @@ _etf_realtime_cache: Dict[str, Any] = {
     'ttl': 1200  # 20分钟缓存有效期
 }
 
+# 概念板块列表缓存（减少重复全量拉取）
+_concept_east_cache: Dict[str, Any] = {
+    'data': None,
+    'timestamp': 0,
+    'ttl': 3600  # 1小时缓存有效期
+}
+_concept_ths_cache: Dict[str, Any] = {
+    'data': None,
+    'timestamp': 0,
+    'ttl': 3600  # 1小时缓存有效期
+}
+
 
 def _is_etf_code(stock_code: str) -> bool:
     """
@@ -1803,6 +1815,372 @@ class AkshareFetcher(BaseFetcher):
         
         except Exception as e:
             logger.error(f"[Akshare] 新浪接口获取板块排行也失败: {e}")
+            return None
+
+    def get_industry_sw(self, stock_code: str) -> Optional[Dict[str, Any]]:
+        """
+        获取申万行业分类（A股）
+
+        数据源：
+        1. ak.stock_individual_info_em() — 个股基本信息中的"所属行业"
+        2. ak.stock_board_industry_name_em() + ak.stock_board_industry_cons_em() 反向匹配
+
+        Returns:
+            {"stock_code": str, "industry_name": str, "industry_code": str|None}
+        """
+        import akshare as ak
+
+        code = normalize_stock_code(stock_code)
+        if not code.isdigit() or len(code) != 6:
+            logger.debug(f"[行业] 非A股代码跳过: {stock_code}")
+            return None
+
+        # 候选1: stock_individual_info_em
+        try:
+            self._set_random_user_agent()
+            self._enforce_rate_limit()
+            logger.info(f"[API调用] ak.stock_individual_info_em({code})")
+            df = ak.stock_individual_info_em(symbol=code)
+            if isinstance(df, pd.DataFrame) and not df.empty:
+                # 查找"所属行业"行
+                for _, row in df.iterrows():
+                    if "所属行业" in str(row.get("item", "")):
+                        industry = str(row.get("value", "")).strip()
+                        if industry:
+                            return {
+                                "stock_code": code,
+                                "industry_name": industry,
+                                "industry_code": None,
+                            }
+        except Exception as e:
+            logger.warning(f"[Akshare] stock_individual_info_em 获取行业失败: {e}")
+
+        # 候选2: 反向匹配行业成分股
+        try:
+            self._set_random_user_agent()
+            self._enforce_rate_limit()
+            logger.info("[API调用] ak.stock_board_industry_name_em() 反向匹配行业...")
+            industry_df = ak.stock_board_industry_name_em()
+            if isinstance(industry_df, pd.DataFrame) and not industry_df.empty:
+                name_col = next(
+                    (c for c in industry_df.columns if "板块名称" in str(c) or "名称" in str(c)),
+                    None,
+                )
+                code_col = next(
+                    (c for c in industry_df.columns if "板块代码" in str(c) or "代码" in str(c)),
+                    None,
+                )
+                if name_col is None:
+                    return None
+                for _, row in industry_df.iterrows():
+                    industry_name = str(row.get(name_col, "")).strip()
+                    if not industry_name:
+                        continue
+                    try:
+                        self._set_random_user_agent()
+                        self._enforce_rate_limit()
+                        cons_df = ak.stock_board_industry_cons_em(symbol=industry_name)
+                        if isinstance(cons_df, pd.DataFrame) and not cons_df.empty:
+                            code_col_cons = next(
+                                (c for c in cons_df.columns if "代码" in str(c)),
+                                None,
+                            )
+                            if code_col_cons is not None:
+                                codes = cons_df[code_col_cons].astype(str).str.strip().tolist()
+                                if code in codes:
+                                    return {
+                                        "stock_code": code,
+                                        "industry_name": industry_name,
+                                        "industry_code": str(row.get(code_col, "")).strip() if code_col else None,
+                                    }
+                    except Exception:
+                        continue
+        except Exception as e:
+            logger.warning(f"[Akshare] 反向匹配行业失败: {e}")
+
+        return None
+
+    def _get_cached_concept_list(self, source: str = "east") -> Optional[pd.DataFrame]:
+        """获取带缓存的概念列表"""
+        cache = _concept_east_cache if source == "east" else _concept_ths_cache
+        now = time.time()
+        if cache["data"] is not None and (now - cache["timestamp"]) < cache["ttl"]:
+            return cache["data"]
+
+        import akshare as ak
+        try:
+            self._set_random_user_agent()
+            self._enforce_rate_limit()
+            if source == "east":
+                logger.info("[API调用] ak.stock_board_concept_name_em() 获取概念列表...")
+                df = ak.stock_board_concept_name_em()
+            else:
+                logger.info("[API调用] ak.stock_board_concept_name_ths() 获取概念列表...")
+                df = ak.stock_board_concept_name_ths()
+            if isinstance(df, pd.DataFrame) and not df.empty:
+                cache["data"] = df
+                cache["timestamp"] = now
+                return df
+        except Exception as e:
+            logger.warning(f"[Akshare] 获取{source}概念列表失败: {e}")
+        return None
+
+    def get_concept_east(self, stock_code: str) -> Optional[List[Dict[str, Any]]]:
+        """
+        获取个股所属概念板块（东方财富）
+
+        策略：
+        1. 先尝试 stock_individual_info_em 中的"所属概念"
+        2. 失败时退化为返回全部概念列表（带缓存）
+        """
+        import akshare as ak
+
+        code = normalize_stock_code(stock_code)
+        if not code.isdigit() or len(code) != 6:
+            logger.debug(f"[概念] 非A股代码跳过: {stock_code}")
+            return None
+
+        # 候选1: stock_individual_info_em
+        try:
+            self._set_random_user_agent()
+            self._enforce_rate_limit()
+            logger.info(f"[API调用] ak.stock_individual_info_em({code}) 获取概念...")
+            df = ak.stock_individual_info_em(symbol=code)
+            if isinstance(df, pd.DataFrame) and not df.empty:
+                for _, row in df.iterrows():
+                    if "所属概念" in str(row.get("item", "")) or "概念" in str(row.get("item", "")):
+                        val = str(row.get("value", "")).strip()
+                        if val:
+                            concepts = [c.strip() for c in val.split(",") if c.strip()]
+                            return [{"name": c, "code": None} for c in concepts]
+        except Exception as e:
+            logger.warning(f"[Akshare] stock_individual_info_em 获取概念失败: {e}")
+
+        # 候选2: 退化为返回全部概念列表
+        concept_df = self._get_cached_concept_list(source="east")
+        if concept_df is not None and not concept_df.empty:
+            name_col = next(
+                (c for c in concept_df.columns if "板块名称" in str(c) or "概念名称" in str(c) or "名称" in str(c)),
+                None,
+            )
+            code_col = next(
+                (c for c in concept_df.columns if "板块代码" in str(c) or "概念代码" in str(c) or "代码" in str(c)),
+                None,
+            )
+            if name_col is not None:
+                results = []
+                for _, row in concept_df.head(200).iterrows():
+                    name = str(row.get(name_col, "")).strip()
+                    if name:
+                        item: Dict[str, Any] = {"name": name}
+                        if code_col is not None:
+                            item["code"] = str(row.get(code_col, "")).strip() or None
+                        results.append(item)
+                return results
+
+        return None
+
+    def get_concept_ths(self, stock_code: str) -> Optional[List[Dict[str, Any]]]:
+        """
+        获取个股所属概念板块（同花顺）
+
+        当前退化为返回同花顺概念列表（带缓存），
+        因 akshare 暂无直接"个股->同花顺概念"的高效接口。
+        """
+        code = normalize_stock_code(stock_code)
+        if not code.isdigit() or len(code) != 6:
+            logger.debug(f"[概念THS] 非A股代码跳过: {stock_code}")
+            return None
+
+        concept_df = self._get_cached_concept_list(source="ths")
+        if concept_df is not None and not concept_df.empty:
+            name_col = next(
+                (c for c in concept_df.columns if "板块名称" in str(c) or "概念名称" in str(c) or "名称" in str(c)),
+                None,
+            )
+            code_col = next(
+                (c for c in concept_df.columns if "板块代码" in str(c) or "概念代码" in str(c) or "代码" in str(c)),
+                None,
+            )
+            if name_col is not None:
+                results = []
+                for _, row in concept_df.head(200).iterrows():
+                    name = str(row.get(name_col, "")).strip()
+                    if name:
+                        item: Dict[str, Any] = {"name": name}
+                        if code_col is not None:
+                            item["code"] = str(row.get(code_col, "")).strip() or None
+                        results.append(item)
+                return results
+        return None
+
+    def get_plate_east(self, stock_code: str) -> Optional[List[Dict[str, Any]]]:
+        """
+        获取个股所属板块（东方财富）
+
+        返回结构化列表，包含行业和地域信息。
+        """
+        import akshare as ak
+
+        code = normalize_stock_code(stock_code)
+        if not code.isdigit() or len(code) != 6:
+            logger.debug(f"[板块] 非A股代码跳过: {stock_code}")
+            return None
+
+        plates: List[Dict[str, Any]] = []
+
+        # 获取行业
+        industry = self.get_industry_sw(stock_code)
+        if industry and industry.get("industry_name"):
+            plates.append({
+                "type": "industry",
+                "name": industry["industry_name"],
+                "code": industry.get("industry_code"),
+            })
+
+        # 获取概念
+        concepts = self.get_concept_east(stock_code)
+        if concepts:
+            for c in concepts[:20]:
+                plates.append({
+                    "type": "concept",
+                    "name": c.get("name", ""),
+                    "code": c.get("code"),
+                })
+
+        # 尝试获取地域（通过 stock_individual_info_em 中的"所属地域"）
+        try:
+            self._set_random_user_agent()
+            self._enforce_rate_limit()
+            logger.info(f"[API调用] ak.stock_individual_info_em({code}) 获取地域...")
+            df = ak.stock_individual_info_em(symbol=code)
+            if isinstance(df, pd.DataFrame) and not df.empty:
+                for _, row in df.iterrows():
+                    if "所属地域" in str(row.get("item", "")) or "地域" in str(row.get("item", "")):
+                        val = str(row.get("value", "")).strip()
+                        if val:
+                            plates.append({
+                                "type": "region",
+                                "name": val,
+                                "code": None,
+                            })
+                            break
+        except Exception as e:
+            logger.debug(f"[Akshare] 获取地域失败: {e}")
+
+        return plates if plates else None
+
+    def get_core_index(self, stock_code: str) -> Optional[Dict[str, Any]]:
+        """
+        获取核心财务指标
+
+        数据源：ak.stock_financial_analysis_indicator()
+        返回标准化字段：eps, bps, roe, gross_margin, net_margin, debt_ratio 等
+        """
+        import akshare as ak
+
+        code = normalize_stock_code(stock_code)
+        if not code.isdigit() or len(code) != 6:
+            logger.debug(f"[核心财务] 非A股代码跳过: {stock_code}")
+            return None
+
+        try:
+            self._set_random_user_agent()
+            self._enforce_rate_limit()
+            logger.info(f"[API调用] ak.stock_financial_analysis_indicator({code})")
+            df = ak.stock_financial_analysis_indicator(symbol=code)
+            if not isinstance(df, pd.DataFrame) or df.empty:
+                return None
+
+            row = df.iloc[0]
+
+            def _col_val(keywords: List[str]) -> Optional[Any]:
+                for col in row.index:
+                    if any(k in str(col) for k in keywords):
+                        return row[col]
+                return None
+
+            def _to_float(v: Any) -> Optional[float]:
+                try:
+                    if v is None:
+                        return None
+                    s = str(v).strip().replace(",", "").replace("%", "")
+                    if not s or s.lower() in ("nan", "none", "null", "-"):
+                        return None
+                    return float(s)
+                except (TypeError, ValueError):
+                    return None
+
+            result = {
+                "stock_code": code,
+                "report_date": str(_col_val(["报告期", "报告日期"])) or None,
+                "eps": _to_float(_col_val(["每股收益", "EPS", "基本每股收益"])),
+                "bps": _to_float(_col_val(["每股净资产", "BPS", "每股净值"])),
+                "roe": _to_float(_col_val(["净资产收益率", "ROE"])),
+                "gross_margin": _to_float(_col_val(["毛利率"])),
+                "net_margin": _to_float(_col_val(["净利率", "销售净利率"])),
+                "debt_ratio": _to_float(_col_val(["资产负债率", "负债率"])),
+                "revenue": _to_float(_col_val(["营业总收入", "营业收入", "营收"])),
+                "net_profit": _to_float(_col_val(["净利润", "归母净利润"])),
+                "total_assets": _to_float(_col_val(["总资产", "资产总计"])),
+                "total_equity": _to_float(_col_val(["净资产", "所有者权益"])),
+            }
+            return result
+        except Exception as e:
+            logger.warning(f"[Akshare] 获取核心财务指标失败: {e}")
+            return None
+
+    def get_north_flow(self, start_date: Optional[str] = None, end_date: Optional[str] = None) -> Optional[pd.DataFrame]:
+        """
+        获取北向资金净流入数据（沪股通+深股通）
+
+        数据源：ak.stock_hsgt_north_net_flow_in_em(symbol="北上")
+        返回字段标准化：trade_date, net_hgt, buy_hgt, sell_hgt, net_sgt, buy_sgt, sell_sgt, net_tgt
+        """
+        import akshare as ak
+
+        try:
+            self._set_random_user_agent()
+            self._enforce_rate_limit()
+            logger.info("[API调用] ak.stock_hsgt_north_net_flow_in_em(symbol='北上')")
+            df = ak.stock_hsgt_north_net_flow_in_em(symbol="北上")
+            if not isinstance(df, pd.DataFrame) or df.empty:
+                return None
+
+            # 列名标准化
+            rename_map = {
+                "日期": "trade_date",
+                " tradedate": "trade_date",
+                "datetime": "trade_date",
+                "今日净流入": "net_tgt",
+                "当日资金流入": "net_tgt",
+                "沪股通": "net_hgt",
+                "深股通": "net_sgt",
+                "沪股通流入": "net_hgt",
+                "深股通流入": "net_sgt",
+                "沪股通买入": "buy_hgt",
+                "深股通买入": "buy_sgt",
+                "沪股通卖出": "sell_hgt",
+                "深股通卖出": "sell_sgt",
+            }
+            for old, new in rename_map.items():
+                if old in df.columns:
+                    df = df.rename(columns={old: new})
+
+            # 确保核心列存在
+            for col in ["trade_date", "net_hgt", "net_sgt", "net_tgt"]:
+                if col not in df.columns:
+                    df[col] = None
+
+            # 日期过滤
+            if start_date is not None:
+                df = df[df["trade_date"] >= start_date]
+            if end_date is not None:
+                df = df[df["trade_date"] <= end_date]
+
+            return df.reset_index(drop=True)
+        except Exception as e:
+            logger.warning(f"[Akshare] 获取北向资金失败: {e}")
             return None
 
 

@@ -94,12 +94,12 @@ class ExtractFromImageResponse(BaseModel):
 
 class StockHistoryResponse(BaseModel):
     """股票历史行情响应"""
-    
+
     stock_code: str = Field(..., description="股票代码")
     stock_name: Optional[str] = Field(None, description="股票名称")
     period: str = Field(..., description="K 线周期")
     data: List[KLineData] = Field(default_factory=list, description="K 线数据列表")
-    
+
     class Config:
         json_schema_extra = {
             "example": {
@@ -109,3 +109,78 @@ class StockHistoryResponse(BaseModel):
                 "data": []
             }
         }
+
+
+class IndustrySwResponse(BaseModel):
+    """申万行业分类响应"""
+
+    stock_code: str = Field(..., description="股票代码")
+    industry_name: Optional[str] = Field(None, description="行业名称")
+    industry_code: Optional[str] = Field(None, description="行业代码")
+
+
+class ConceptItem(BaseModel):
+    """概念/板块项"""
+
+    name: str = Field(..., description="名称")
+    code: Optional[str] = Field(None, description="代码")
+
+
+class ConceptListResponse(BaseModel):
+    """概念归属响应"""
+
+    stock_code: str = Field(..., description="股票代码")
+    source: str = Field("east", description="数据源: east/ths")
+    data: List[ConceptItem] = Field(default_factory=list, description="概念列表")
+
+
+class PlateItem(BaseModel):
+    """板块项"""
+
+    type: str = Field(..., description="板块类型: industry/region/concept")
+    name: str = Field(..., description="名称")
+    code: Optional[str] = Field(None, description="代码")
+
+
+class PlateListResponse(BaseModel):
+    """板块归属响应"""
+
+    stock_code: str = Field(..., description="股票代码")
+    data: List[PlateItem] = Field(default_factory=list, description="板块列表")
+
+
+class CoreIndexResponse(BaseModel):
+    """核心财务指标响应"""
+
+    stock_code: str = Field(..., description="股票代码")
+    report_date: Optional[str] = Field(None, description="报告期")
+    eps: Optional[float] = Field(None, description="每股收益")
+    bps: Optional[float] = Field(None, description="每股净资产")
+    roe: Optional[float] = Field(None, description="净资产收益率(%)")
+    gross_margin: Optional[float] = Field(None, description="毛利率(%)")
+    net_margin: Optional[float] = Field(None, description="净利率(%)")
+    debt_ratio: Optional[float] = Field(None, description="资产负债率(%)")
+    revenue: Optional[float] = Field(None, description="营业总收入")
+    net_profit: Optional[float] = Field(None, description="净利润")
+    total_assets: Optional[float] = Field(None, description="总资产")
+    total_equity: Optional[float] = Field(None, description="净资产")
+
+
+class NorthFlowItem(BaseModel):
+    """北向资金单条记录"""
+
+    trade_date: Optional[str] = Field(None, description="交易日期")
+    net_hgt: Optional[float] = Field(None, description="沪股通净流入")
+    buy_hgt: Optional[float] = Field(None, description="沪股通买入")
+    sell_hgt: Optional[float] = Field(None, description="沪股通卖出")
+    net_sgt: Optional[float] = Field(None, description="深股通净流入")
+    buy_sgt: Optional[float] = Field(None, description="深股通买入")
+    sell_sgt: Optional[float] = Field(None, description="深股通卖出")
+    net_tgt: Optional[float] = Field(None, description="北向资金合计净流入")
+
+
+class NorthFlowResponse(BaseModel):
+    """北向资金响应"""
+
+    data: List[NorthFlowItem] = Field(default_factory=list, description="北向资金数据")
+    count: int = Field(0, description="记录数")

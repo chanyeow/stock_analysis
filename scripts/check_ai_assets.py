@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+# AI 协作资产校验脚本
+# 功能：校验仓库中 AI 协作治理文件的完整性和一致性
+# 检查项：AGENTS.md 与 CLAUDE.md 软链接关系、Copilot 指令文件内容、
+#         .github/instructions/ 下必需指令文件、.claude/skills/ 下必需 skill 文件、
+#         .gitignore 中 AI 资产规则、.claude/ 目录下不应有被跟踪的非 skill 文件
 
 from __future__ import annotations
 

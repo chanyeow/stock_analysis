@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# CI 后端门禁脚本
+# 功能：在 CI 流水线中执行后端代码质量检查，可按阶段单独运行
+# 阶段：syntax（Python 语法检查）-> flake8（静态分析）-> deterministic（确定性测试）-> offline-tests（离线 pytest）
+# 用法：./scripts/ci_gate.sh [all|syntax|flake8|deterministic|offline-tests]
 
 set -euo pipefail
 

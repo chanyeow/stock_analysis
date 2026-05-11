@@ -9,6 +9,11 @@
 2. POST /api/v1/stocks/parse-import 解析 CSV/Excel/剪贴板
 3. GET /api/v1/stocks/{code}/quote 实时行情接口
 4. GET /api/v1/stocks/{code}/history 历史行情接口
+5. GET /api/v1/stocks/{code}/industry 申万行业
+6. GET /api/v1/stocks/{code}/concepts 概念归属
+7. GET /api/v1/stocks/{code}/plates 板块归属
+8. GET /api/v1/stocks/{code}/core-index 核心财务指标
+9. GET /api/v1/stocks/north-flow 北向资金
 """
 
 import logging
@@ -17,9 +22,17 @@ from typing import Optional
 from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
 
 from api.v1.schemas.stocks import (
+    ConceptItem,
+    ConceptListResponse,
+    CoreIndexResponse,
     ExtractFromImageResponse,
     ExtractItem,
+    IndustrySwResponse,
     KLineData,
+    NorthFlowItem,
+    NorthFlowResponse,
+    PlateItem,
+    PlateListResponse,
     StockHistoryResponse,
     StockQuote,
 )
@@ -239,6 +252,58 @@ async def parse_import(request: Request) -> ExtractFromImageResponse:
     return ExtractFromImageResponse(codes=codes, items=extract_items, raw_text=None)
 
 
+# === 新增高优先级数据接口（源自 AData 对比补齐） ===
+
+# 须在 /{stock_code} 路由之前定义，否则 FastAPI 会把 "north-flow" 匹配为 stock_code
+
+
+@router.get(
+    "/north-flow",
+    response_model=NorthFlowResponse,
+    responses={
+        200: {"description": "北向资金数据"},
+        500: {"description": "服务器错误", "model": ErrorResponse},
+    },
+    summary="获取北向资金净流入",
+    description="获取沪股通/深股通北向资金净流入历史数据（东方财富）",
+)
+def get_north_flow(
+    start_date: Optional[str] = Query(None, description="起始日期，格式 YYYY-MM-DD"),
+    end_date: Optional[str] = Query(None, description="截止日期，格式 YYYY-MM-DD"),
+) -> NorthFlowResponse:
+    """
+    获取北向资金净流入数据
+    """
+    try:
+        service = StockService()
+        result = service.get_north_flow(start_date=start_date, end_date=end_date)
+
+        if result is None:
+            return NorthFlowResponse(data=[], count=0)
+
+        items = [
+            NorthFlowItem(
+                trade_date=str(r.get("trade_date", "")) if r.get("trade_date") else None,
+                net_hgt=r.get("net_hgt"),
+                buy_hgt=r.get("buy_hgt"),
+                sell_hgt=r.get("sell_hgt"),
+                net_sgt=r.get("net_sgt"),
+                buy_sgt=r.get("buy_sgt"),
+                sell_sgt=r.get("sell_sgt"),
+                net_tgt=r.get("net_tgt"),
+            )
+            for r in result.get("data", [])
+        ]
+        return NorthFlowResponse(data=items, count=result.get("count", len(items)))
+
+    except Exception as e:
+        logger.error(f"获取北向资金失败: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "internal_error", "message": f"获取北向资金失败: {str(e)}"},
+        )
+
+
 @router.get(
     "/{stock_code}/quote",
     response_model=StockQuote,
@@ -386,4 +451,148 @@ def get_stock_history(
                 "error": "internal_error",
                 "message": f"获取历史行情失败: {str(e)}"
             }
+        )
+
+
+@router.get(
+    "/{stock_code}/industry",
+    response_model=IndustrySwResponse,
+    responses={
+        200: {"description": "申万行业"},
+        500: {"description": "服务器错误", "model": ErrorResponse},
+    },
+    summary="获取申万行业分类",
+    description="获取指定股票的申万行业分类（东方财富）",
+)
+def get_industry(stock_code: str) -> IndustrySwResponse:
+    try:
+        service = StockService()
+        result = service.get_industry_sw(stock_code)
+
+        if result is None:
+            return IndustrySwResponse(stock_code=stock_code)
+
+        return IndustrySwResponse(
+            stock_code=result.get("stock_code", stock_code),
+            industry_name=result.get("industry_name"),
+            industry_code=result.get("industry_code"),
+        )
+
+    except Exception as e:
+        logger.error(f"获取申万行业失败: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "internal_error", "message": f"获取申万行业失败: {str(e)}"},
+        )
+
+
+@router.get(
+    "/{stock_code}/concepts",
+    response_model=ConceptListResponse,
+    responses={
+        200: {"description": "概念归属"},
+        500: {"description": "服务器错误", "model": ErrorResponse},
+    },
+    summary="获取股票所属概念板块",
+    description="获取指定股票所属的概念板块列表。source=east 为东方财富（默认），source=ths 为同花顺。",
+)
+def get_concepts(
+    stock_code: str,
+    source: str = Query("east", description="数据源: east/ths", pattern="^(east|ths)$"),
+) -> ConceptListResponse:
+    try:
+        service = StockService()
+        result = service.get_concepts(stock_code, source=source)
+
+        if result is None:
+            return ConceptListResponse(stock_code=stock_code, source=source, data=[])
+
+        items = [
+            ConceptItem(name=c.get("name", ""), code=c.get("code"))
+            for c in result
+        ]
+        return ConceptListResponse(stock_code=stock_code, source=source, data=items)
+
+    except Exception as e:
+        logger.error(f"获取概念失败: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "internal_error", "message": f"获取概念失败: {str(e)}"},
+        )
+
+
+@router.get(
+    "/{stock_code}/plates",
+    response_model=PlateListResponse,
+    responses={
+        200: {"description": "板块归属"},
+        500: {"description": "服务器错误", "model": ErrorResponse},
+    },
+    summary="获取股票所属板块",
+    description="获取指定股票所属的板块列表，包含行业、地域、概念。",
+)
+def get_plates(stock_code: str) -> PlateListResponse:
+    try:
+        service = StockService()
+        result = service.get_plates(stock_code)
+
+        if result is None:
+            return PlateListResponse(stock_code=stock_code, data=[])
+
+        items = [
+            PlateItem(
+                type=p.get("type", "unknown"),
+                name=p.get("name", ""),
+                code=p.get("code"),
+            )
+            for p in result
+        ]
+        return PlateListResponse(stock_code=stock_code, data=items)
+
+    except Exception as e:
+        logger.error(f"获取板块失败: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "internal_error", "message": f"获取板块失败: {str(e)}"},
+        )
+
+
+@router.get(
+    "/{stock_code}/core-index",
+    response_model=CoreIndexResponse,
+    responses={
+        200: {"description": "核心财务指标"},
+        500: {"description": "服务器错误", "model": ErrorResponse},
+    },
+    summary="获取核心财务指标",
+    description="获取指定股票的核心财务指标（东方财富），包含 EPS、ROE、毛利率等。",
+)
+def get_core_index(stock_code: str) -> CoreIndexResponse:
+    try:
+        service = StockService()
+        result = service.get_core_index(stock_code)
+
+        if result is None:
+            return CoreIndexResponse(stock_code=stock_code)
+
+        return CoreIndexResponse(
+            stock_code=result.get("stock_code", stock_code),
+            report_date=result.get("report_date"),
+            eps=result.get("eps"),
+            bps=result.get("bps"),
+            roe=result.get("roe"),
+            gross_margin=result.get("gross_margin"),
+            net_margin=result.get("net_margin"),
+            debt_ratio=result.get("debt_ratio"),
+            revenue=result.get("revenue"),
+            net_profit=result.get("net_profit"),
+            total_assets=result.get("total_assets"),
+            total_equity=result.get("total_equity"),
+        )
+
+    except Exception as e:
+        logger.error(f"获取核心财务指标失败: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "internal_error", "message": f"获取核心财务指标失败: {str(e)}"},
         )
