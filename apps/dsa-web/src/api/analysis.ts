@@ -115,6 +115,27 @@ export const analysisApi = {
   },
 
   /**
+   * List all market review reports.
+   */
+  getMarketReviewReports: async (): Promise<{ reports: Array<{ date: string; hour: string; filename: string; size: number }> }> => {
+    const response = await apiClient.get<Record<string, unknown>>(
+      '/api/v1/analysis/market-review/reports'
+    );
+    return toCamelCase(response.data) as { reports: Array<{ date: string; hour: string; filename: string; size: number }> };
+  },
+
+  /**
+   * Get market review reports for a specific date.
+   * @param date Date string in YYYYMMDD format
+   */
+  getMarketReviewReportsByDate: async (date: string): Promise<{ date: string; reports: Array<{ hour: string; filename: string; content: string }> }> => {
+    const response = await apiClient.get<Record<string, unknown>>(
+      `/api/v1/analysis/market-review/reports/${date}`
+    );
+    return toCamelCase(response.data) as { date: string; reports: Array<{ hour: string; filename: string; content: string }> };
+  },
+
+  /**
    * Get async task status.
    * @param taskId Task ID
    */

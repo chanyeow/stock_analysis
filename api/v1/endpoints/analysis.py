@@ -41,6 +41,10 @@ from api.v1.schemas.analysis import (
     DuplicateTaskErrorResponse,
     MarketReviewRequest,
     MarketReviewAccepted,
+    MarketReviewReportListResponse,
+    MarketReviewReportItem,
+    MarketReviewReportContentResponse,
+    MarketReviewReportEntry,
 )
 from api.v1.schemas.common import ErrorResponse
 from api.v1.schemas.history import (
@@ -118,6 +122,8 @@ def _run_market_review_background(
     config: Optional[Config] = None,
 ) -> None:
     """Run market review after the API response has been accepted."""
+    import types
+    import uuid
     from src.core.market_review import run_market_review
 
     runtime_config = config or get_config_dep()
@@ -132,6 +138,34 @@ def _run_market_review_background(
         )
         if not report:
             raise RuntimeError("大盘复盘未返回可持久化报告")
+
+        # 持久化到 analysis_history 表，使 WebUI 历史页面可见
+        try:
+            from src.storage import DatabaseManager
+            db = DatabaseManager.get_instance()
+            query_id = uuid.uuid4().hex
+            result_obj = types.SimpleNamespace(
+                code="MARKET",
+                name="大盘复盘",
+                sentiment_score=50,
+                operation_advice="观望",
+                trend_prediction="震荡",
+                analysis_summary=report,
+                to_dict=lambda: {"report": report, "report_type": "market_review"},
+                get_sniper_points=lambda: {},
+                data_sources="",
+                raw_response=None,
+            )
+            db.save_analysis_history(
+                result=result_obj,
+                query_id=query_id,
+                report_type="market_review",
+                news_content=None,
+                save_snapshot=False,
+            )
+        except Exception as exc:
+            logger.warning("保存大盘复盘历史记录失败: %s", exc)
+
         return {"result": report}
     finally:
         _release_market_review_lock(lock_token)
@@ -521,6 +555,98 @@ def trigger_market_review(
         send_notification=request.send_notification,
         task_id=task.task_id,
     )
+
+
+# ============================================================
+# GET /market-review/reports - 列出大盘复盘报告
+# ============================================================
+
+_REPORTS_DIR = Path(__file__).resolve().parent.parent.parent.parent / "reports"
+_REPORT_PATTERN = "market_review_*.md"
+
+
+def _parse_market_review_filename(filename: str) -> Optional[Dict[str, str]]:
+    """Parse market_review_YYYYMMDD_HH.md -> {date, hour} or None."""
+    import re as _re
+    m = _re.match(r"^market_review_(\d{8})_(\d{2})\.md$", filename)
+    if m:
+        return {"date": m.group(1), "hour": m.group(2)}
+    # 兼容旧格式 market_review_YYYYMMDD.md
+    m = _re.match(r"^market_review_(\d{8})\.md$", filename)
+    if m:
+        return {"date": m.group(1), "hour": "00"}
+    return None
+
+
+@router.get(
+    "/market-review/reports",
+    response_model=MarketReviewReportListResponse,
+    responses={
+        200: {"description": "大盘复盘报告列表"},
+    },
+    summary="列出大盘复盘报告",
+    description="扫描 reports 目录，返回所有大盘复盘报告的元信息列表",
+)
+def list_market_review_reports() -> MarketReviewReportListResponse:
+    reports = []
+    if _REPORTS_DIR.is_dir():
+        for f in sorted(_REPORTS_DIR.glob("market_review_*.md"), reverse=True):
+            parsed = _parse_market_review_filename(f.name)
+            if parsed:
+                reports.append(
+                    MarketReviewReportItem(
+                        date=parsed["date"],
+                        hour=parsed["hour"],
+                        filename=f.name,
+                        size=f.stat().st_size,
+                    )
+                )
+    return MarketReviewReportListResponse(reports=reports)
+
+
+# ============================================================
+# GET /market-review/reports/{date} - 获取指定日期报告
+# ============================================================
+
+@router.get(
+    "/market-review/reports/{date}",
+    response_model=MarketReviewReportContentResponse,
+    responses={
+        200: {"description": "指定日期的大盘复盘报告"},
+        404: {"description": "该日期无报告", "model": ErrorResponse},
+    },
+    summary="获取指定日期的大盘复盘报告",
+    description="返回指定日期下所有大盘复盘报告（同一天可能有多份，按小时区分）",
+)
+def get_market_review_report_by_date(date: str) -> MarketReviewReportContentResponse:
+    import re as _re
+    if not _re.match(r"^\d{8}$", date):
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "invalid_date", "message": "日期格式应为 YYYYMMDD"},
+        )
+
+    entries = []
+    if _REPORTS_DIR.is_dir():
+        for f in sorted(_REPORTS_DIR.glob(f"market_review_{date}_*.md"), reverse=True):
+            parsed = _parse_market_review_filename(f.name)
+            if parsed and parsed["date"] == date:
+                content = f.read_text(encoding="utf-8")
+                entries.append(
+                    MarketReviewReportEntry(
+                        hour=parsed["hour"],
+                        filename=f.name,
+                        content=content,
+                    )
+                )
+
+    if not entries:
+        raise HTTPException(
+            status_code=404,
+            detail={"error": "not_found", "message": f"日期 {date} 无大盘复盘报告"},
+        )
+
+    return MarketReviewReportContentResponse(date=date, reports=entries)
 
 
 # ============================================================

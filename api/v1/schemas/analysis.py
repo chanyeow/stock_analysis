@@ -108,6 +108,36 @@ class MarketReviewAccepted(BaseModel):
     )
 
 
+class MarketReviewReportItem(BaseModel):
+    """单个大盘复盘报告元信息"""
+
+    date: str = Field(..., description="报告日期 YYYYMMDD")
+    hour: str = Field(..., description="报告小时 HH")
+    filename: str = Field(..., description="文件名")
+    size: int = Field(..., description="文件大小（字节）")
+
+
+class MarketReviewReportListResponse(BaseModel):
+    """大盘复盘报告列表响应"""
+
+    reports: List[MarketReviewReportItem] = Field(default_factory=list, description="报告列表")
+
+
+class MarketReviewReportEntry(BaseModel):
+    """指定日期下的单份报告"""
+
+    hour: str = Field(..., description="报告小时 HH")
+    filename: str = Field(..., description="文件名")
+    content: str = Field(..., description="报告内容")
+
+
+class MarketReviewReportContentResponse(BaseModel):
+    """指定日期的大盘复盘报告内容响应"""
+
+    date: str = Field(..., description="报告日期 YYYYMMDD")
+    reports: List[MarketReviewReportEntry] = Field(default_factory=list, description="该日期的报告列表")
+
+
 class AnalysisResultResponse(BaseModel):
     """分析结果响应模型"""
     
