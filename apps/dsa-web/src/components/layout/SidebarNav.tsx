@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { BarChart3, BriefcaseBusiness, Home, LogOut, MessageSquareQuote, ScrollText, Settings2, TrendingUp } from 'lucide-react';
+import { BarChart3, BriefcaseBusiness, Home, Landmark, LogOut, MessageSquareQuote, ScrollText, Settings2, TrendingUp } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useAgentChatStore } from '../../stores/agentChatStore';
@@ -26,6 +26,7 @@ type NavItem = {
 const NAV_ITEMS: NavItem[] = [
   { key: 'home', label: '首页', to: '/', icon: Home, exact: true },
   { key: 'market', label: '大盘', to: '/market-review', icon: TrendingUp },
+  { key: 'capital-flow', label: '资金流', to: '/capital-flow', icon: Landmark },
   { key: 'chat', label: '问股', to: '/chat', icon: MessageSquareQuote, badge: 'completion' },
   { key: 'portfolio', label: '持仓', to: '/portfolio', icon: BriefcaseBusiness },
   { key: 'backtest', label: '回测', to: '/backtest', icon: BarChart3 },

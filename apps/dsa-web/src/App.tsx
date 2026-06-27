@@ -10,6 +10,7 @@ import NotFoundPage from './pages/NotFoundPage';
 import ChatPage from './pages/ChatPage';
 import PortfolioPage from './pages/PortfolioPage';
 import LogsPage from './pages/LogsPage';
+import CapitalFlowPage from './pages/CapitalFlowPage';
 import { ApiErrorAlert, Shell } from './components/common';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { useAgentChatStore } from './stores/agentChatStore';
@@ -65,6 +66,7 @@ const AppContent: React.FC = () => {
       <Route element={<Shell />}>
         <Route path="/" element={<HomePage />} />
         <Route path="/market-review" element={<MarketReviewPage />} />
+        <Route path="/capital-flow" element={<CapitalFlowPage />} />
         <Route path="/chat" element={<ChatPage />} />
         <Route path="/portfolio" element={<PortfolioPage />} />
         <Route path="/backtest" element={<BacktestPage />} />
