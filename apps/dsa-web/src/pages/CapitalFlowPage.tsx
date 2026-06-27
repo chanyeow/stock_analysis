@@ -9,6 +9,7 @@ import {
   Cell,
 } from 'recharts';
 import { ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { capitalFlowApi, type CapitalFlowItem, type CapitalFlowTableItem } from '../api/capitalFlow';
 import { ApiErrorAlert } from '../components/common';
 import { createParsedApiError, type ParsedApiError } from '../api/error';
@@ -174,6 +175,7 @@ const CustomXTick: React.FC<XTickProps> = ({ x, y, payload }) => {
 // ============================================================
 
 const CapitalFlowPage: React.FC = () => {
+  const navigate = useNavigate();
   const [category, setCategory] = useState<'industry' | 'concept'>('industry');
   const [period, setPeriod] = useState<string>('today');
   const [data, setData] = useState<CapitalFlowItem[]>([]);
@@ -204,10 +206,14 @@ const CapitalFlowPage: React.FC = () => {
         );
         setData(result.data);
       } catch (err: unknown) {
+        // 检查是否是 404 无数据错误
+        const is404 = err instanceof Error && err.message.includes('404');
         const parsed = createParsedApiError({
-          title: '获取板块资金流失败',
-          message: err instanceof Error ? err.message : '获取数据失败，请稍后重试',
-          category: 'upstream_network',
+          title: is404 ? '暂无数据' : '获取板块资金流失败',
+          message: is404
+            ? '未找到板块数据，请先到「知识库」页签点击刷新按钮爬取数据'
+            : err instanceof Error ? err.message : '获取数据失败，请稍后重试',
+          category: is404 ? 'unknown' : 'upstream_network',
         });
         setError(parsed);
       } finally {
@@ -292,16 +298,19 @@ const CapitalFlowPage: React.FC = () => {
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-semibold text-foreground">资金流</h1>
-        <button
-          type="button"
-          onClick={handleRefresh}
-          disabled={refreshing}
-          className="btn-ghost inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors hover:bg-hover disabled:opacity-50"
-          title="刷新数据"
-        >
-          <RefreshCw className={cn('h-4 w-4', refreshing && 'animate-spin')} />
-          刷新
-        </button>
+        {/* 刷新按钮已隐藏，数据从知识库读取 */}
+        {false && (
+          <button
+            type="button"
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className="btn-ghost inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors hover:bg-hover disabled:opacity-50"
+            title="刷新数据"
+          >
+            <RefreshCw className={cn('h-4 w-4', refreshing && 'animate-spin')} />
+            刷新
+          </button>
+        )}
       </div>
 
       {/* Category tabs */}
@@ -353,13 +362,23 @@ const CapitalFlowPage: React.FC = () => {
       ) : error ? (
         <div className="flex-1">
           <ApiErrorAlert error={error} />
-          <button
-            type="button"
-            onClick={handleRefresh}
-            className="btn-primary mt-4"
-          >
-            重试
-          </button>
+          {error.title === '暂无数据' ? (
+            <button
+              type="button"
+              onClick={() => navigate('/knowledge')}
+              className="btn-primary mt-4"
+            >
+              前往知识库爬取数据
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={handleRefresh}
+              className="btn-primary mt-4"
+            >
+              重试
+            </button>
+          )}
         </div>
       ) : data.length === 0 ? (
         <div className="flex flex-1 items-center justify-center text-muted-foreground">

@@ -47,33 +47,33 @@ export interface CapitalFlowTableResponse {
 
 export const capitalFlowApi = {
   /**
-   * Get chart data for industry/concept sectors.
+   * Get chart data for industry/concept sectors from knowledge base (markdown files).
    */
   getData: async (
     category: 'industry' | 'concept' = 'industry',
-    period: string = 'today',
-    forceRefresh: boolean = false,
+    _period: string = 'today',
+    _forceRefresh: boolean = false,
   ): Promise<CapitalFlowResponse> => {
     const response = await apiClient.get<Record<string, unknown>>(
-      '/api/v1/capital-flow/data',
-      { params: { category, period, force_refresh: forceRefresh } },
+      '/api/v1/knowledge/capital-flow/data',
+      { params: { category } },
     );
     return toCamelCase<CapitalFlowResponse>(response.data);
   },
 
   /**
-   * Get table data with pagination and richer fields.
+   * Get table data with pagination and richer fields from knowledge base (markdown files).
    */
   getTable: async (
     category: 'industry' | 'concept' = 'industry',
     period: string = 'today',
     page: number = 1,
     pageSize: number = 50,
-    forceRefresh: boolean = false,
+    _forceRefresh: boolean = false,
   ): Promise<CapitalFlowTableResponse> => {
     const response = await apiClient.get<Record<string, unknown>>(
-      '/api/v1/capital-flow/table',
-      { params: { category, period, page, page_size: pageSize, force_refresh: forceRefresh } },
+      '/api/v1/knowledge/capital-flow/table',
+      { params: { category, period, page, page_size: pageSize } },
     );
     return toCamelCase<CapitalFlowTableResponse>(response.data);
   },

@@ -564,6 +564,7 @@ def fetch_table_data(
                 "price": item.get("f2"),
                 "change_pct": item.get("f3") or item.get("f109") or item.get("f160"),
                 "company_count": item.get("f1"),
+                "updated_at": item.get("f124"),
                 "lead_stock_name": item.get("f260", "") or item.get("f257", "") or item.get("f204", ""),
                 "lead_stock_code": item.get("f261", "") or item.get("f258", "") or item.get("f205", ""),
                 "main_flow": main_flow,
