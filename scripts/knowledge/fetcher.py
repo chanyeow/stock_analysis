@@ -34,7 +34,7 @@ from scripts.knowledge.types import (
 logger = logging.getLogger(__name__)
 
 # res 目录路径
-RES_DIR = Path(__file__).parent.parent.parent / "res"
+RES_DIR = Path(__file__).parent.parent.parent.parent / "res"
 
 
 def _get_res_dir() -> Path:
@@ -725,7 +725,7 @@ CUM_START_DATE = "2026-06-27"
 
 def _get_cumulative_path() -> Path:
     """获取累计状态文件路径"""
-    return _get_res_dir().parent / "res" / "bk" / "_cumulative.json"
+    return _get_res_dir() / "bk" / "_cumulative.json"
 
 
 def load_cumulative_state() -> Dict:
