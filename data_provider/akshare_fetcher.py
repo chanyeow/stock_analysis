@@ -49,7 +49,7 @@ from .realtime_types import (
     get_realtime_circuit_breaker, get_chip_circuit_breaker,
     safe_float, safe_int  # 使用统一的类型转换函数
 )
-from .us_index_mapping import is_us_index_code, is_us_stock_code
+# 美股支持已移除
 
 
 # 保留旧的 RealtimeQuote 别名，用于向后兼容
@@ -165,28 +165,8 @@ def is_hk_stock_code(stock_code: str) -> bool:
 
 
 def _is_us_code(stock_code: str) -> bool:
-    """
-    判断代码是否为美股股票（不包括美股指数）。
-
-    委托给 us_index_mapping 模块的 is_us_stock_code()。
-
-    Args:
-        stock_code: 股票代码
-
-    Returns:
-        True 表示是美股代码，False 表示不是美股代码
-
-    Examples:
-        >>> _is_us_code('AAPL')
-        True
-        >>> _is_us_code('TSLA')
-        True
-        >>> _is_us_code('SPX')
-        False
-        >>> _is_us_code('600519')
-        False
-    """
-    return is_us_stock_code(stock_code)
+    """美股支持已移除，始终返回 False。"""
+    return False
 
 
 def _to_sina_tx_symbol(stock_code: str) -> str:
@@ -357,9 +337,8 @@ class AkshareFetcher(BaseFetcher):
         # 根据代码类型选择不同的获取方法
         if _is_us_code(stock_code):
             # 美股：akshare 的 stock_us_daily 接口复权存在已知问题（参见 Issue #311）
-            # 交由 YfinanceFetcher 处理，确保复权价格一致
             raise DataFetchError(
-                f"AkshareFetcher 不支持美股 {stock_code}，请使用 YfinanceFetcher 获取正确的复权价格"
+                f"AkshareFetcher 不支持该股票代码 {stock_code}（美股支持已移除）"
             )
         elif _is_hk_code(stock_code):
             return self._fetch_hk_data(stock_code, start_date, end_date)
@@ -809,11 +788,7 @@ class AkshareFetcher(BaseFetcher):
         circuit_breaker = get_realtime_circuit_breaker()
 
         # 根据代码类型选择不同的获取方法
-        if _is_us_code(stock_code):
-            # 美股不使用 Akshare，由 YfinanceFetcher 处理
-            logger.debug(f"[API跳过] {stock_code} 是美股，Akshare 不支持美股实时行情")
-            return None
-        elif _is_hk_code(stock_code):
+        if _is_hk_code(stock_code):
             return self._get_hk_realtime_quote(stock_code)
         elif _is_etf_code(stock_code):
             source_key = "akshare_etf"

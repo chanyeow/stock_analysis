@@ -351,9 +351,9 @@ class EfinanceFetcher(BaseFetcher):
         4. 调用对应的 efinance API
         5. 处理返回数据
         """
-        # 美股不支持，抛出异常让 DataFetcherManager 切换到 AkshareFetcher/YfinanceFetcher
+        # 美股不支持
         if _is_us_code(stock_code):
-            raise DataFetchError(f"EfinanceFetcher 不支持美股 {stock_code}，请使用 AkshareFetcher 或 YfinanceFetcher")
+            raise DataFetchError(f"EfinanceFetcher 不支持该股票代码 {stock_code}（仅支持 A 股）")
 
         # efinance 的历史 K 线接口在港股代码上可能返回非预期市场数据，
         # 明确跳过并交给 AkShare/Tushare/YFinance/Longbridge 等港股路径兜底。

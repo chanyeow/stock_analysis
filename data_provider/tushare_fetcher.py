@@ -365,7 +365,7 @@ class TushareFetcher(BaseFetcher):
             return ts_code
 
         if _is_us_code(raw_code):
-            raise DataFetchError(f"TushareFetcher 不支持美股 {raw_code}，请使用 AkshareFetcher 或 YfinanceFetcher")
+            raise DataFetchError(f"TushareFetcher 不支持该股票代码 {raw_code}（仅支持 A 股/港股）")
 
         if _is_hk_market(raw_code):
             #raise DataFetchError(f"TushareFetcher 不支持港股 {raw_code}，请使用 AkshareFetcher")
@@ -450,7 +450,7 @@ class TushareFetcher(BaseFetcher):
         
         # US stocks not supported
         if _is_us_code(stock_code):
-            raise DataFetchError(f"TushareFetcher 不支持美股 {stock_code}，请使用 AkshareFetcher 或 YfinanceFetcher")
+            raise DataFetchError(f"TushareFetcher 不支持该股票代码 {stock_code}（仅支持 A 股/港股）")
         
         # Rate-limit check
         self._check_rate_limit()

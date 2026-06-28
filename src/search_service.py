@@ -32,7 +32,7 @@ from tenacity import (
     before_sleep_log,
 )
 
-from data_provider.us_index_mapping import is_us_index_code
+# 美股支持已移除
 from src.config import (
     NEWS_STRATEGY_WINDOWS,
     normalize_news_strategy_profile,
@@ -2227,9 +2227,6 @@ class SearchService:
     def _is_foreign_stock(stock_code: str) -> bool:
         """判断是否为港股或美股"""
         code = stock_code.strip()
-        # 美股：1-5个大写字母，可能包含点（如 BRK.B）
-        if SearchService._US_STOCK_RE.match(code):
-            return True
         # 港股：带 hk 前缀或 5位纯数字
         lower = code.lower()
         if lower.startswith('hk'):
@@ -2247,7 +2244,7 @@ class SearchService:
     def _is_us_stock(cls, stock_code: str) -> bool:
         """判断是否为美股/美股指数代码。"""
         code = (stock_code or "").strip().upper()
-        return bool(cls._US_STOCK_RE.match(code) or is_us_index_code(code))
+        return False  # 美股支持已移除
 
     @classmethod
     def _should_prefer_chinese_news(
@@ -2333,8 +2330,7 @@ class SearchService:
         """Resolve Brave locale hints without forcing US bias onto non-US symbols."""
         if prefer_chinese:
             return {"search_lang": "zh-hans", "country": "CN"}
-        if cls._is_us_stock(stock_code):
-            return {"search_lang": "en", "country": "US"}
+        # US stock locale removed
         return {}
 
     # A-share ETF code prefixes (Shanghai 51/52/56/58, Shenzhen 15/16/18)
@@ -2353,10 +2349,8 @@ class SearchService:
         # A-share ETF
         if code.isdigit() and len(code) == 6 and code.startswith(SearchService._A_ETF_PREFIXES):
             return True
-        # US index (SPX, DJI, IXIC etc.)
-        if is_us_index_code(code):
-            return True
-        # US/HK ETF: foreign symbol + name contains fund-like keywords
+        # US index support removed
+        # HK ETF: foreign symbol + name contains fund-like keywords
         if SearchService._is_foreign_stock(code):
             name_upper = (stock_name or '').upper()
             return any(kw in name_upper for kw in SearchService._ETF_NAME_KEYWORDS)

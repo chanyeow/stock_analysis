@@ -46,16 +46,14 @@ def get_market_for_stock(code: str) -> Optional[str]:
     Infer market region for a stock code.
 
     Returns:
-        'cn' | 'hk' | 'us' | None (None = unrecognized, fail-open: treat as open)
+        'cn' | 'hk' | None (None = unrecognized, fail-open: treat as open)
     """
     if not code or not isinstance(code, str):
         return None
     code = (code or "").strip().upper()
 
-    from data_provider import is_us_stock_code, is_us_index_code, is_hk_stock_code
+    from data_provider import is_hk_stock_code
 
-    if is_us_stock_code(code) or is_us_index_code(code):
-        return "us"
     if is_hk_stock_code(code):
         return "hk"
     # A-share: 6-digit numeric

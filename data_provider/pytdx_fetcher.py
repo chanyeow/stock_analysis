@@ -271,9 +271,9 @@ class PytdxFetcher(BaseFetcher):
         3. 判断市场代码
         4. 调用 API 获取 K 线数据
         """
-        # 美股不支持，抛出异常让 DataFetcherManager 切换到其他数据源
+        # 美股不支持
         if _is_us_code(stock_code):
-            raise DataFetchError(f"PytdxFetcher 不支持美股 {stock_code}，请使用 AkshareFetcher 或 YfinanceFetcher")
+            raise DataFetchError(f"PytdxFetcher 不支持该股票代码 {stock_code}（仅支持 A 股）")
 
         # 港股不支持，抛出异常让 DataFetcherManager 切换到其他数据源
         if _is_hk_market(stock_code):

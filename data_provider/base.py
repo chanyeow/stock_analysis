@@ -78,7 +78,6 @@ def normalize_stock_code(stock_code: str) -> str:
     - '920748.BJ'   -> '920748'   (strip .BJ suffix, BSE)
     - 'HK00700'     -> 'HK00700'  (keep HK prefix for HK stocks)
     - '1810.HK'     -> 'HK01810'  (normalize HK suffix to canonical prefix form)
-    - 'AAPL'        -> 'AAPL'     (keep US stock ticker as-is)
 
     This function is applied at the DataProviderManager layer so that
     all individual fetchers receive a clean 6-digit code (for A-shares/ETFs).
@@ -120,11 +119,8 @@ ETF_PREFIXES = ("51", "52", "56", "58", "15", "16", "18")
 
 
 def _is_us_market(code: str) -> bool:
-    """判断是否为美股/美股指数代码（不含中文前后缀）。"""
-    from .us_index_mapping import is_us_stock_code, is_us_index_code
-
-    normalized = (code or "").strip().upper()
-    return is_us_index_code(normalized) or is_us_stock_code(normalized)
+    """美股市场判断（已移除美股支持，始终返回 False）。"""
+    return False
 
 
 def _is_hk_market(code: str) -> bool:
@@ -489,8 +485,6 @@ class DataFetcherManager:
         "TushareFetcher": {"cn", "hk"},
         "PytdxFetcher": {"cn"},
         "BaostockFetcher": {"cn"},
-        "YfinanceFetcher": {"cn", "hk", "us"},
-        "LongbridgeFetcher": {"hk", "us"},
     }
     
     def __init__(self, fetchers: Optional[List[BaseFetcher]] = None):
@@ -890,24 +884,18 @@ class DataFetcherManager:
           2. PytdxFetcher (Priority 2) - 通达信
           2. TushareFetcher (Priority 2)
           3. BaostockFetcher (Priority 3)
-          4. YfinanceFetcher (Priority 4)
-          5. LongbridgeFetcher (Priority 5) - 长桥（美股/港股兜底）
         """
         from .efinance_fetcher import EfinanceFetcher
         from .akshare_fetcher import AkshareFetcher
         from .tushare_fetcher import TushareFetcher
         from .pytdx_fetcher import PytdxFetcher
         from .baostock_fetcher import BaostockFetcher
-        from .yfinance_fetcher import YfinanceFetcher
-        from .longbridge_fetcher import LongbridgeFetcher
         # 创建所有数据源实例（优先级在各 Fetcher 的 __init__ 中确定）
         efinance = EfinanceFetcher()
         akshare = AkshareFetcher()
         tushare = TushareFetcher()  # 会根据 Token 配置自动调整优先级
         pytdx = PytdxFetcher()      # 通达信数据源（可配 PYTDX_HOST/PYTDX_PORT）
         baostock = BaostockFetcher()
-        yfinance = YfinanceFetcher()
-        longbridge = LongbridgeFetcher()  # 长桥（美股/港股兜底，懒加载）
 
         # 初始化数据源列表
         self._ensure_concurrency_guards()
@@ -918,8 +906,6 @@ class DataFetcherManager:
                 tushare,
                 pytdx,
                 baostock,
-                yfinance,
-                longbridge,
             ]
 
             # 按优先级排序（Tushare 如果配置了 Token 且初始化成功，优先级为 0）
@@ -945,10 +931,10 @@ class DataFetcherManager:
     ) -> Tuple[pd.DataFrame, str]:
         """
         获取日线数据（自动切换数据源）
-        
+
         故障切换策略：
-        1. 美股指数/美股股票直接路由到 YfinanceFetcher
-        2. 其他代码从最高优先级数据源开始尝试
+        1. 港股先过滤不支持港股日线的数据源
+        2. 从最高优先级数据源开始尝试
         3. 捕获异常后自动切换到下一个
         4. 记录每个数据源的失败原因
         5. 所有数据源失败后抛出详细异常
@@ -965,8 +951,6 @@ class DataFetcherManager:
         Raises:
             DataFetchError: 所有数据源都失败时抛出
         """
-        from .us_index_mapping import is_us_index_code, is_us_stock_code
-
         # Normalize code (strip SH/SZ prefix etc.)
         stock_code = normalize_stock_code(stock_code)
 
@@ -974,66 +958,11 @@ class DataFetcherManager:
         errors = []
         request_start = time.time()
 
-        # 快速路径：美股使用专用数据源路由；港股先过滤不支持港股日线的数据源
-        #   - 配置长桥凭据后: Longbridge 为首选, YFinance/AkShare 兜底
-        #   - 未配置长桥:     YFinance 为首选（美股）, 通用 fetcher 循环（港股）
-        #   - 美股指数:       始终 YFinance 为首选（Longbridge 不提供指数K线）
-        is_us_index = is_us_index_code(stock_code)
-        is_us = is_us_index or is_us_stock_code(stock_code)
-        is_hk = (not is_us) and _is_hk_market(stock_code)
+        # 港股先过滤不支持港股日线的数据源
+        is_hk = _is_hk_market(stock_code)
         if is_hk:
             fetchers = self._filter_daily_fetchers_for_market(fetchers, "hk")
         total_fetchers = len(fetchers)
-
-        # 美股（含美股指数）使用 Longbridge/YFinance 特殊路由；港股走下方通用数据源循环
-        if is_us:
-            prefer_lb = self._longbridge_preferred() and not is_us_index
-            source_order = (
-                ["LongbridgeFetcher", "YfinanceFetcher"]
-                if prefer_lb
-                else ["YfinanceFetcher", "LongbridgeFetcher"]
-            )
-            market_label = "美股指数" if is_us_index else "美股"
-
-            for src_name in source_order:
-                for attempt, fetcher in enumerate(fetchers, start=1):
-                    if fetcher.name != src_name:
-                        continue
-                    try:
-                        role = "首选" if src_name == source_order[0] else "兜底"
-                        logger.info(
-                            f"[数据源尝试 {attempt}/{total_fetchers}] [{fetcher.name}] "
-                            f"{market_label} {stock_code} {role}路由..."
-                        )
-                        df = self._call_fetcher_method(
-                            fetcher,
-                            "get_daily_data",
-                            stock_code=stock_code,
-                            start_date=start_date,
-                            end_date=end_date,
-                            days=days,
-                        )
-                        if df is not None and not df.empty:
-                            elapsed = time.time() - request_start
-                            logger.info(
-                                f"[数据源完成] {stock_code} 使用 [{fetcher.name}] 获取成功: "
-                                f"rows={len(df)}, elapsed={elapsed:.2f}s"
-                            )
-                            return df, fetcher.name
-                    except Exception as e:
-                        error_type, error_reason = summarize_exception(e)
-                        error_msg = f"[{fetcher.name}] ({error_type}) {error_reason}"
-                        logger.warning(
-                            f"[数据源失败 {attempt}/{total_fetchers}] [{fetcher.name}] {stock_code}: "
-                            f"error_type={error_type}, reason={error_reason}"
-                        )
-                        errors.append(error_msg)
-                    break
-
-            error_summary = f"{market_label} {stock_code} 获取失败:\n" + "\n".join(errors)
-            elapsed = time.time() - request_start
-            logger.error(f"[数据源终止] {stock_code} 获取失败: elapsed={elapsed:.2f}s\n{error_summary}")
-            raise DataFetchError(error_summary)
 
         for attempt, fetcher in enumerate(fetchers, start=1):
             try:
@@ -1164,9 +1093,9 @@ class DataFetcherManager:
     def get_realtime_quote(self, stock_code: str, *, log_final_failure: bool = True):
         """
         获取实时行情数据（自动故障切换）
-        
+
         故障切换策略（按配置的优先级）：
-        1. 美股：使用 YfinanceFetcher.get_realtime_quote()
+        1. 港股：使用 AkshareFetcher (source="hk")
         2. EfinanceFetcher.get_realtime_quote()
         3. AkshareFetcher.get_realtime_quote(source="em")  - 东财
         4. AkshareFetcher.get_realtime_quote(source="sina") - 新浪
@@ -1185,8 +1114,6 @@ class DataFetcherManager:
         # Normalize code (strip SH/SZ prefix etc.)
         stock_code = normalize_stock_code(stock_code)
 
-        from .akshare_fetcher import _is_us_code
-        from .us_index_mapping import is_us_index_code
         from src.config import get_config
 
         config = get_config()
@@ -1196,43 +1123,16 @@ class DataFetcherManager:
             logger.debug(f"[实时行情] 功能已禁用，跳过 {stock_code}")
             return None
 
-        # ----------------------------------------------------------
-        # 美股 (指数 + 个股) / 港股 — 专用双源路由
-        #   配置长桥后: Longbridge 首选, YFinance/AkShare 补充
-        #   未配置长桥: YFinance/AkShare 首选, Longbridge 补充
-        #   美股指数:   始终 YFinance 首选（Longbridge 不提供指数行情）
-        # ----------------------------------------------------------
-        is_us_index = is_us_index_code(stock_code)
-        is_us = is_us_index or _is_us_code(stock_code)
-        is_hk = (not is_us) and _is_hk_market(stock_code)
-
-        if is_us or is_hk:
-            prefer_lb = self._longbridge_preferred() and not is_us_index
-            if is_us:
-                primary_src = "LongbridgeFetcher" if prefer_lb else "YfinanceFetcher"
-                secondary_src = "YfinanceFetcher" if prefer_lb else "LongbridgeFetcher"
-                market_label = "美股指数" if is_us_index else "美股"
-                primary_kw: dict = {}
-                secondary_kw: dict = {}
-            else:
-                primary_src = "LongbridgeFetcher" if prefer_lb else "AkshareFetcher"
-                secondary_src = "AkshareFetcher" if prefer_lb else "LongbridgeFetcher"
-                market_label = "港股"
-                primary_kw = {"source": "hk"} if primary_src == "AkshareFetcher" else {}
-                secondary_kw = {"source": "hk"} if secondary_src == "AkshareFetcher" else {}
-
-            primary_quote = self._try_fetcher_quote(stock_code, primary_src, **primary_kw)
-            if primary_quote is not None:
-                logger.info(f"[实时行情] {market_label} {stock_code} 成功获取 (来源: {primary_src})")
-            primary_quote = self._supplement_quote(
-                stock_code, primary_quote, secondary_src, **secondary_kw,
-            )
+        # 港股：通过 AkshareFetcher 的 HK 数据源获取
+        is_hk = _is_hk_market(stock_code)
+        if is_hk:
+            primary_quote = self._try_fetcher_quote(stock_code, "AkshareFetcher", source="hk")
             if primary_quote is not None:
                 return primary_quote
             if log_final_failure:
-                logger.info(f"[实时行情] {market_label} {stock_code} 无可用数据源")
+                logger.info(f"[实时行情] 港股 {stock_code} 无可用数据源")
             return None
-        
+
         # 获取配置的数据源优先级
         source_priority = config.realtime_source_priority.split(',')
         
@@ -1361,17 +1261,6 @@ class DataFetcherManager:
                     filled.append(f)
         return filled
 
-    def _longbridge_preferred(self) -> bool:
-        """Return True when Longbridge keys are configured and available.
-
-        When True, non-A-share routing (US & HK) uses Longbridge as the
-        primary data source with Yfinance/AkShare as fallback.
-        """
-        for f in self._get_fetchers_snapshot():
-            if f.name == "LongbridgeFetcher":
-                return hasattr(f, '_is_available') and f._is_available()
-        return False
-
     def _try_fetcher_quote(self, stock_code: str, fetcher_name: str, **kw):
         """Try to get a realtime quote from a named fetcher; returns quote or None."""
         for f in self._get_fetchers_snapshot():
@@ -1411,10 +1300,6 @@ class DataFetcherManager:
         if q is not None:
             logger.info(f"[实时行情] {stock_code} 从 {fetcher_name} 获取成功 (独立数据源)")
         return q
-
-    def _supplement_from_longbridge(self, stock_code: str, primary_quote):
-        """Shortcut kept for backward-compat with A-share general loop."""
-        return self._supplement_quote(stock_code, primary_quote, "LongbridgeFetcher")
 
     def get_chip_distribution(self, stock_code: str):
         """
@@ -1525,14 +1410,7 @@ class DataFetcherManager:
                 return name
 
         # 3. 依次尝试各个数据源
-        from .akshare_fetcher import _is_us_code
-        is_us = _is_us_code(stock_code)
-        _US_CAPABLE_FETCHERS = {"YfinanceFetcher", "LongbridgeFetcher"}
         for fetcher in self._get_fetchers_snapshot():
-            if not hasattr(fetcher, 'get_stock_name'):
-                continue
-            if is_us and fetcher.name not in _US_CAPABLE_FETCHERS:
-                continue
             try:
                 name = self._call_fetcher_method(fetcher, 'get_stock_name', stock_code)
                 if is_meaningful_stock_name(name, stock_code):

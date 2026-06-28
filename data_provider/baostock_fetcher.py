@@ -184,9 +184,9 @@ class BaostockFetcher(BaseFetcher):
         4. 调用 API 查询数据
         5. 将结果转换为 DataFrame
         """
-        # 美股不支持，抛出异常让 DataFetcherManager 切换到其他数据源
+        # 美股不支持
         if _is_us_code(stock_code):
-            raise DataFetchError(f"BaostockFetcher 不支持美股 {stock_code}，请使用 AkshareFetcher 或 YfinanceFetcher")
+            raise DataFetchError(f"BaostockFetcher 不支持该股票代码 {stock_code}（仅支持 A 股）")
 
         # 港股不支持，抛出异常让 DataFetcherManager 切换到其他数据源
         if _is_hk_market(stock_code):
